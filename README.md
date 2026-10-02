@@ -29,8 +29,8 @@ Figures, notebook `09` and the R analysis run in seconds from the cached results
 |---|---|
 | [`notebooks/`](notebooks/) | analysis notebooks, one per paper section ([list](notebooks/README.md)) |
 | [`figures/`](figures/) | one script per paper figure ([list](figures/README.md)) |
-| [`R/`](R/) | statistical tests and model comparison (Sec. 3.4–3.5) |
-| [`results/`](results/) | cached results read by the figures, `R/` and notebook `09` |
+| [`stats/`](stats/) | statistical tests and model comparison (Sec. 3.4–3.5) |
+| [`results/`](results/) | cached results read by the figures, `stats/` and notebook `09` |
 | [`scripts/`](scripts/) | HRTF download script used by `init.sh` |
 | `data/` | downloaded inputs (git-ignored); set `BL_DATA_DIR` to keep them elsewhere |
 
@@ -46,7 +46,7 @@ differ; none changes a conclusion:
 - Table 2: "Wins" counts participants with ΔBIC < −2, not merely a lower BIC.
 
 The paper was computed with a development version of `bayesian_listener` (commit `c0b711a`). The
-released package computes the spectral features much faster, at a different absolute level. This
+released package now computes the spectral features much faster, at a different absolute level. This
 only affects the `barumerli2023` interpolation, which regularises the order-0 SH coefficient (unlike
 the original MATLAB implementation) and therefore depends on the feature level: re-running it gives
 slightly different values. The cached results in `results/` are the paper's.

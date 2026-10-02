@@ -16,7 +16,6 @@ __pycache__/
 # Generated figures (python -m figures.generate_all)
 /figures/output/
 
-# Rendered R report
-/R/*.html
-/R/*.pdf
-/R/fitting_analysis_files/
+# Rendered R report (the PDF is tracked)
+/stats/*.html
+/stats/fitting_analysis_files/

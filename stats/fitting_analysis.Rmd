@@ -15,7 +15,7 @@ output:
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE, fig.width=4, fig.height = 3, fig.align="center")
 
 # Statistical analysis of the fitted models (paper Sec. 3.4, 3.4.1, 3.5; Table 2).
-# Knit from this folder (R/); inputs are read from ../results/.
+# Knit from this folder (stats/); inputs are read from ../results/.
 #   Rscript -e 'rmarkdown::render("fitting_analysis.Rmd")'
 # R packages: data.table, ggplot2, Rmisc, ARTool, effectsize (+ rmarkdown, knitr to render)
 packages <- c("ggplot2", "data.table", "Rmisc", "effectsize", "ARTool")

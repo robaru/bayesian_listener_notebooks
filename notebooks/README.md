@@ -18,4 +18,4 @@ All file locations are defined in `paths.py`.
 
 Notebooks with cached results in `../results/` load them instead of recomputing. Re-running
 `03`, `04`, `07` and `08` from scratch takes hours; `07` only refits when `RUN_FITTING = True`.
-Order of dependencies: `02` → `03`, `04`; `07` → `08` → `09`, `../R/` and the figures.
+Order of dependencies: `02` → `03`, `04`; `07` → `08` → `09`, `../stats/` and the figures.

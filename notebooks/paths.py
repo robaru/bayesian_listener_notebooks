@@ -12,7 +12,7 @@ environment variable ``BL_DATA_DIR`` to keep the data somewhere else::
 
     export BL_DATA_DIR=/path/to/my/data
 
-Cached analysis results (read by the figure scripts and by ``R/``) live in
+Cached analysis results (read by the figure scripts and by ``stats/``) live in
 ``results/``; generated figures go to ``figures/output/``.
 """
 import os
