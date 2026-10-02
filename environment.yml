@@ -1,0 +1,26 @@
+# Conda environment for the analysis notebooks and figure scripts.
+#   conda env create -f environment.yml      (or: ./init.sh)
+#   conda activate bayesian_listener_notebooks
+name: bayesian_listener_notebooks
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  # scientific stack (also pulled in by bayesian_listener, listed for clarity)
+  - numpy
+  - scipy
+  - pandas
+  - matplotlib
+  - joblib
+  # notebooks
+  - jupyterlab
+  - ipykernel
+  - nbconvert
+  # figure post-processing: style.crop_pdf measures the ink bounding box with
+  # Ghostscript and crops with `pdfcrop` (TeX Live) if available, else pypdf
+  - ghostscript
+  - pypdf
+  - pip:
+      # the model; pulls in pyfar, sofar, spharpy, pybads, numba, ...
+      - bayesian_listener==0.2.0

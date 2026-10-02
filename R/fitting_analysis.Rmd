@@ -1,0 +1,466 @@
+---
+title: "Fitting AXD"
+author: "Roberto Barumerli"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    highlight: default
+  html_document:
+    toc: true
+    df_print: paged
+---
+
+```{r setup, include=FALSE, display=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, fig.width=4, fig.height = 3, fig.align="center")
+
+# Statistical analysis of the fitted models (paper Sec. 3.4, 3.4.1, 3.5; Table 2).
+# Knit from this folder (R/); inputs are read from ../results/.
+#   Rscript -e 'rmarkdown::render("fitting_analysis.Rmd")'
+# R packages: data.table, ggplot2, Rmisc, ARTool, effectsize (+ rmarkdown, knitr to render)
+packages <- c("ggplot2", "data.table", "Rmisc", "effectsize", "ARTool")
+results_dir <- file.path("..", "results")
+
+# sapply(packages, install.packages)
+sapply(packages, require, character.only = TRUE)
+
+# https://stackoverflow.com/questions/40901445/function-to-calculate-r2-r-squared-in-r#40901487
+rsq <- function (x, y, m='spearman') cor(x, y,method = m) ^ 2
+
+theme_set(theme_classic(base_size = 10))
+theme_update(text = element_text(size = 10),
+             legend.text=element_text(size=7),
+             scale_fill_brewer(palette = "Set2"),
+             scale_colour_brewer(palette = "Set2"))
+```
+
+
+
+```{r}
+dt <- as.data.table(read.csv(file.path(results_dir, "fitting_results.csv")))
+# dt2 <- as.data.table(read.csv("fits_results_AXD_no_rectifier.csv"))
+dt$model <- 'original'
+
+# Number of observations per participant: n_trials (from fit_listener) equals the number of
+# 'Measured' trials per participant in the behavioural data (AXD_full_dataset_20260202.csv)
+dt[, N := n_trials]
+dt <- dt[order(participant)]
+
+# dt <- dt[!participant %in% c('P0204', 'P0224', 'P0228', 'P0239', 'P0244', 'P0259', 'P0330', 'P0350')]
+# dt <- dt[!participant %in% c('P0204', 'P0228', 'P0239', 'P0243', 'P0244', 'P0259', 'P0330')]
+# dt <- dt[!participant %in% c( 'P0239', 'P0243', 'P0261', 'P0020',
+#                               'P0204', 'P0228', 'P0244', 'P0330')]
+
+# dt <- dt[participant %in% n_obs_per_participant[N > 100]$participant]
+
+# Define number of parameters per method
+# You'll need to adjust these based on your actual models
+# Typically: sigma_spectral, sigma_motor, sigma_prior 
+k_params <- 3
+
+# Compute BIC
+# BIC = k*log(n) + 2*NLL
+dt[, BIC := k_params * log(N) + 2 * nll_500]
+
+# For model comparison, compute delta BIC relative to baseline within each participant
+dt[, delta_BIC := BIC - min(BIC), by = participant]
+
+aa <- dcast(dt, participant ~ method, value.var = "delta_BIC")
+# Count how many times each method is best
+dt[, .(best_method = method[which.min(delta_BIC)]), by = participant][, .N, by = best_method]
+
+# Plot delta BIC instead of llz
+summarySE(dt, measurevar = "delta_BIC", groupvars = c("method", 'model')) |> 
+  ggplot() + 
+  geom_pointrange(aes(x = method, y = delta_BIC, ymin = delta_BIC-se, ymax = delta_BIC+se, color = model), 
+                  position = position_dodge(width = .2)) +
+  labs(y = "delta_BIC (lower is better)", 
+       title = "Model comparison via BIC")
+
+write.csv(dt, 'fitting_results_bic.csv')
+
+summarySE(dt, measurevar = "delta_BIC", groupvars = c("method", 'model'))
+```
+
+```{r}
+# dt <- dt[subject != 'P0244']
+
+dtm <- melt(dt, id.vars = c('participant', 'method', 'model'), measure.vars = c('sigma_spectral', 'sigma_motor', 'sigma_prior'))
+summarySE(dtm, measurevar = "value", groupvars = c("method", 'variable', 'model')) |> 
+  ggplot() + 
+  geom_pointrange(aes(x = method, y = value, ymin = value-se, ymax = value+se))+
+  facet_grid(variable ~ model, scales = "free")
+
+```
+
+```{r}
+dt$method <- as.factor(dt$method)
+dt$participant <- as.factor(dt$participant)
+am <- art(delta_BIC ~ method + Error(participant), data = dt)
+anova_res <- anova(am)
+anova_res
+
+# explained variance
+eta_squared(anova_res)
+```
+
+Posthoc
+
+```{r}
+art.con(am, 'method')
+```
+```{r}
+# ============================================================
+# 1. Friedman test
+# ============================================================
+bic_wide <- dcast(dt, participant ~ method, value.var = "BIC")
+friedman <- friedman.test(as.matrix(bic_wide[, .(SHMAX, SH, barycentric, barumerli2023)]))
+cat("=== FRIEDMAN TEST ===\n")
+print(friedman)
+```
+
+
+```{r}
+# ============================================================
+# 2. Pairwise Wilcoxon signed-rank tests (BIC differences)
+# ============================================================
+methods <- c("SHMAX", "SH", "barycentric", "barumerli2023")
+pairs <- combn(methods, 2, simplify = FALSE)
+
+pairwise_results <- rbindlist(lapply(pairs, function(pair) {
+  a <- pair[1]; b <- pair[2]
+  bic_a <- dt[method == a, .(participant, BIC_a = BIC)]
+  bic_b <- dt[method == b, .(participant, BIC_b = BIC)]
+  merged <- merge(bic_a, bic_b, by = "participant")
+  d <- merged$BIC_b - merged$BIC_a  # positive = a wins
+  
+  wt <- wilcox.test(d, alternative = "two.sided", exact = FALSE)
+  
+  data.table(
+    method_a = a,
+    method_b = b,
+    wins_a = sum(d > 0),
+    wins_b = sum(d < 0),
+    n = length(d),
+    median_delta = median(d),
+    W = as.numeric(wt$statistic),
+    p = wt$p.value
+  )
+}))
+
+# Holm correction
+pairwise_results[, p_holm := p.adjust(p, method = "bonferroni")]
+
+cat("\n=== PAIRWISE WILCOXON SIGNED-RANK TESTS ===\n")
+print(pairwise_results[order(p)], digits = 4)
+```
+
+
+```{r}
+# ============================================================
+# 3. Win counts (lowest BIC per participant)
+# ============================================================
+winners <- dt[, .SD[which.min(BIC)], by = participant]
+
+cat("\n=== WIN COUNTS (lowest BIC) ===\n")
+print(table(winners$method))
+```
+
+
+```{r}
+# ============================================================
+# 4. Kass & Raftery categories: SHMAX vs barumerli2023
+# ============================================================
+shmax_bic <- dt[method == "SHMAX", .(participant, BIC_shmax = BIC)]
+baru_bic  <- dt[method == "barumerli2023", .(participant, BIC_baru = BIC)]
+kr <- merge(shmax_bic, baru_bic, by = "participant")
+kr[, delta := BIC_baru - BIC_shmax]  # positive = SHMAX wins
+
+cat("\n=== KASS & RAFTERY: SHMAX vs barumerli2023 ===\n")
+cat(sprintf("Strong for SHMAX (dBIC > 10):    %d\n", kr[delta > 10, .N]))
+cat(sprintf("Positive for SHMAX (2 < dBIC <= 10): %d\n", kr[delta > 2 & delta <= 10, .N]))
+cat(sprintf("Negligible (|dBIC| <= 2):          %d\n", kr[abs(delta) <= 2, .N]))
+cat(sprintf("Positive for baru (-10 <= dBIC < -2): %d\n", kr[delta < -2 & delta >= -10, .N]))
+cat(sprintf("Strong for baru (dBIC < -10):     %d\n", kr[delta < -10, .N]))
+```
+
+
+```{r}
+# ============================================================
+# 5. Kass & Raftery categories: barycentric vs barumerli2023
+# ============================================================
+bary_bic <- dt[method == "barycentric", .(participant, BIC_bary = BIC)]
+kr2 <- merge(bary_bic, baru_bic, by = "participant")
+kr2[, delta := BIC_baru - BIC_bary]
+
+cat("\n=== KASS & RAFTERY: barycentric vs barumerli2023 ===\n")
+cat(sprintf("Strong for barycentric (dBIC > 10):    %d\n", kr2[delta > 10, .N]))
+cat(sprintf("Positive for barycentric (2 < dBIC <= 10): %d\n", kr2[delta > 2 & delta <= 10, .N]))
+cat(sprintf("Negligible (|dBIC| <= 2):                %d\n", kr2[abs(delta) <= 2, .N]))
+cat(sprintf("Positive for baru (-10 <= dBIC < -2):    %d\n", kr2[delta < -2 & delta >= -10, .N]))
+cat(sprintf("Strong for baru (dBIC < -10):           %d\n", kr2[delta < -10, .N]))
+```
+
+
+```{r}
+# ============================================================
+# 6. Summary table
+# ============================================================
+cat("\n=== SUMMARY: dBIC from best (per participant) ===\n")
+print(dt[, .(mean = mean(delta_BIC), 
+             median = median(delta_BIC), 
+             sd = sd(delta_BIC)), by = method][order(mean)])
+```
+
+#### parameters
+
+```{r}
+# ============================================================
+# 1. Motor noise consistency across methods
+# ============================================================
+cat("=== MOTOR NOISE (sigma_motor) ===\n")
+cat(sprintf("Range: %.1f–%.1f° (median = %.1f°)\n",
+            dt[, min(sigma_motor)], dt[, max(sigma_motor)], dt[, median(sigma_motor)]))
+
+# Within-participant CV across methods
+motor_cv <- dt[, .(sd = sd(sigma_motor), mean = mean(sigma_motor)), by = participant]
+motor_cv[, cv := sd / mean]
+cat(sprintf("Within-participant CV: mean = %.3f, max = %.3f\n", 
+            mean(motor_cv$cv), max(motor_cv$cv)))
+```
+
+
+```{r}
+# ============================================================
+# 2. Friedman test on sigma_spectral across methods
+# ============================================================
+spec_wide <- dcast(dt, participant ~ method, value.var = "sigma_spectral")
+friedman_spec <- friedman.test(as.matrix(spec_wide[, .(SHMAX, SH, barycentric, barumerli2023)]))
+cat("\n=== FRIEDMAN: sigma_spectral ===\n")
+print(friedman_spec)
+
+# Per-method summary
+cat("\n--- sigma_spectral summary by method ---\n")
+dt[, .(median = median(sigma_spectral),
+       q25 = quantile(sigma_spectral, 0.25),
+       q75 = quantile(sigma_spectral, 0.75),
+       mean = mean(sigma_spectral),
+       sd = sd(sigma_spectral)), by = method][order(median)] |> print(digits = 3)
+```
+
+
+```{r}
+# ============================================================
+# 3. Friedman test on sigma_prior across methods
+# ============================================================
+prior_wide <- dcast(dt, participant ~ method, value.var = "sigma_prior")
+friedman_prior <- friedman.test(as.matrix(prior_wide[, .(SHMAX, SH, barycentric, barumerli2023)]))
+cat("\n=== FRIEDMAN: sigma_prior ===\n")
+print(friedman_prior)
+
+# Per-method summary
+cat("\n--- sigma_prior summary by method ---\n")
+dt[, .(median = median(sigma_prior),
+       q25 = quantile(sigma_prior, 0.25),
+       q75 = quantile(sigma_prior, 0.75),
+       mean = mean(sigma_prior),
+       sd = sd(sigma_prior)), by = method][order(median)] |> print(digits = 3)
+
+# Pairwise Wilcoxon on sigma_prior (follow-up to significant Friedman)
+cat("\n--- sigma_prior pairwise Wilcoxon ---\n")
+methods <- c("SHMAX", "SH", "barycentric", "barumerli2023")
+pairs <- combn(methods, 2, simplify = FALSE)
+prior_pairwise <- rbindlist(lapply(pairs, function(pair) {
+  a <- prior_wide[[pair[1]]]
+  b <- prior_wide[[pair[2]]]
+  wt <- wilcox.test(a, b, paired = TRUE, exact = FALSE)
+  data.table(method_a = pair[1], method_b = pair[2],
+             median_a = median(a), median_b = median(b),
+             V = as.numeric(wt$statistic), p = wt$p.value)
+}))
+prior_pairwise[, p_holm := p.adjust(p, method = "holm")]
+print(prior_pairwise[order(p)], digits = 4)
+```
+
+
+```{r}
+# ============================================================
+# 4. Cross-method Spearman correlations
+# ============================================================
+cat("\n=== CROSS-METHOD CORRELATIONS: sigma_spectral ===\n")
+for (i in 1:(length(methods) - 1)) {
+  for (j in (i + 1):length(methods)) {
+    ct <- cor.test(spec_wide[[methods[i]]], spec_wide[[methods[j]]], method = "spearman")
+    cat(sprintf("  %s vs %s: rho = %.3f, p = %.4f\n",
+                methods[i], methods[j], ct$estimate, ct$p.value))
+  }
+}
+
+cat("\n=== CROSS-METHOD CORRELATIONS: sigma_prior ===\n")
+for (i in 1:(length(methods) - 1)) {
+  for (j in (i + 1):length(methods)) {
+    ct <- cor.test(prior_wide[[methods[i]]], prior_wide[[methods[j]]], method = "spearman")
+    cat(sprintf("  %s vs %s: rho = %.3f, p = %.4f\n",
+                methods[i], methods[j], ct$estimate, ct$p.value))
+  }
+}
+```
+
+
+```{r}
+# ============================================================
+# 5. sigma_spectral vs sigma_prior correlation (per method)
+# ============================================================
+cat("\n=== sigma_spectral vs sigma_prior WITHIN METHOD ===\n")
+for (m in methods) {
+  sub <- dt[method == m]
+  ct <- cor.test(sub$sigma_spectral, sub$sigma_prior, method = "spearman")
+  cat(sprintf("  %s: rho = %.3f, p = %.4f\n", m, ct$estimate, ct$p.value))
+}
+```
+
+
+```{r}
+# ============================================================
+# 6. Within-participant variability of sigma_spectral and sigma_prior
+# ============================================================
+cat("\n=== WITHIN-PARTICIPANT RANGE ACROSS METHODS ===\n")
+spec_range <- dt[, .(range = max(sigma_spectral) - min(sigma_spectral)), by = participant]
+cat(sprintf("sigma_spectral: median range = %.1f, mean range = %.1f\n",
+            median(spec_range$range), mean(spec_range$range)))
+
+prior_range <- dt[, .(range = max(sigma_prior) - min(sigma_prior)), by = participant]
+cat(sprintf("sigma_prior:    median range = %.1f°, mean range = %.1f°\n",
+            median(prior_range$range), mean(prior_range$range)))
+```
+
+
+```{r}
+# ============================================================
+# 7. Overall summary for reporting
+# ============================================================
+cat("\n=== OVERALL SUMMARY (all methods pooled) ===\n")
+cat(sprintf("sigma_motor:    %.1f–%.1f° (median %.1f°)\n",
+            dt[, min(sigma_motor)], dt[, max(sigma_motor)], dt[, median(sigma_motor)]))
+cat(sprintf("sigma_spectral: %.1f–%.1f  (median %.1f)\n",
+            dt[, min(sigma_spectral)], dt[, max(sigma_spectral)], dt[, median(sigma_spectral)]))
+cat(sprintf("sigma_prior:    %.1f–%.1f° (median %.1f°)\n",
+            dt[, min(sigma_prior)], dt[, max(sigma_prior)], dt[, median(sigma_prior)]))
+```
+### posterior
+
+```{r}
+df <- as.data.table(read.csv(file.path(results_dir, "synthetic_vs_actual_comparison.csv")))
+
+actual <- df[data_type == "actual"]
+setkey(actual, participant)
+
+methods <- c("SHMAX", "barycentric", "SH", "barumerli2023")
+metrics <- c("rmsL_deg", "rmsPmedianlocal_deg", "querrMiddlebrooks")
+metric_labels <- c("rmsL", "PE (local)", "QE (%)")
+
+# ============================================================
+# 1. Correlations and bias for main metrics
+# ============================================================
+cat("=== POSTERIOR PREDICTIVE CHECKS ===\n\n")
+
+results <- rbindlist(lapply(methods, function(m) {
+  model <- df[method == m]
+  setkey(model, participant)
+  common <- intersect(actual$participant, model$participant)
+  
+  rbindlist(lapply(seq_along(metrics), function(i) {
+    a <- actual[common, get(metrics[i])]
+    mod <- model[common, get(metrics[i])]
+    
+    ct <- cor.test(a, mod, method = "pearson")
+    wt <- wilcox.test(mod - a, exact = FALSE)
+    
+    data.table(
+      method = m,
+      metric = metric_labels[i],
+      mean_actual = mean(a),
+      mean_model = mean(mod),
+      bias = mean(mod) - mean(a),
+      r = ct$estimate,
+      r_p = ct$p.value,
+      W = as.numeric(wt$statistic),
+      wilcox_p = wt$p.value
+    )
+  }))
+}))
+
+cat("--- Pearson r ---\n")
+r_wide <- dcast(results, metric ~ method, value.var = "r")
+print(r_wide, digits = 3)
+
+cat("\n--- Pearson r p-values ---\n")
+rp_wide <- dcast(results, metric ~ method, value.var = "r_p")
+print(rp_wide, digits = 4)
+
+cat("\n--- Mean bias (model - actual) ---\n")
+bias_wide <- dcast(results, metric ~ method, value.var = "bias")
+print(bias_wide, digits = 2)
+
+cat("\n--- Wilcoxon signed-rank p (model vs actual) ---\n")
+wp_wide <- dcast(results, metric ~ method, value.var = "wilcox_p")
+print(wp_wide, digits = 4)
+```
+
+
+```{r}
+# ============================================================
+# 2. Actual data summary
+# ============================================================
+cat("\n=== ACTUAL DATA SUMMARY ===\n")
+n <- actual[, .N]
+for (i in seq_along(metrics)) {
+  vals <- actual[, get(metrics[i])]
+  cat(sprintf("%s: %.1f ± %.1f (SE), SD = %.1f, N = %d\n",
+              metric_labels[i], mean(vals), sd(vals) / sqrt(n), sd(vals), n))
+}
+```
+
+
+```{r}
+# ============================================================
+# 3. Accuracy metrics (accL, accP) — light treatment
+# ============================================================
+cat("\n=== ACCURACY METRICS (accL, accP at ±30°) ===\n\n")
+
+acc_metrics <- c("accL_cutoff_30_deg", "accP_cutoff_30_deg")
+acc_labels <- c("accL (±30°)", "accP (±30°)")
+
+acc_results <- rbindlist(lapply(methods, function(m) {
+  model <- df[method == m]
+  setkey(model, participant)
+  common <- intersect(actual$participant, model$participant)
+  
+  rbindlist(lapply(seq_along(acc_metrics), function(i) {
+    a <- actual[common, get(acc_metrics[i])]
+    mod <- model[common, get(acc_metrics[i])]
+    
+    ct <- cor.test(a, mod, method = "pearson")
+    wt <- wilcox.test(mod - a, exact = FALSE)
+    
+    data.table(
+      method = m,
+      metric = acc_labels[i],
+      mean_actual = mean(a),
+      mean_model = mean(mod),
+      bias = mean(mod) - mean(a),
+      r = ct$estimate,
+      r_p = ct$p.value,
+      W = as.numeric(wt$statistic),
+      wilcox_p = wt$p.value
+    )
+  }))
+}))
+
+print(acc_results[, .(method, metric, mean_actual = round(mean_actual, 2),
+                       mean_model = round(mean_model, 2),
+                       bias = round(bias, 2),
+                       r = round(r, 3), r_p = round(r_p, 4),
+                       wilcox_p = round(wilcox_p, 4))])
+```
+

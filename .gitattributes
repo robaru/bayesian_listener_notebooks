@@ -1,0 +1,9 @@
+# Large cached result stored with Git LFS (https://git-lfs.com).
+# Fig. 4 model estimations (~107 MB), written by 00_replicate_barumerli2023_fig5.ipynb,
+# read by figures/fig_replicate5.py.
+results/replicate_fig5_estimations.pkl filter=lfs diff=lfs merge=lfs -text
+
+# Binary data tracked in plain git
+*.sofa binary
+*.mat binary
+*.pkl binary
