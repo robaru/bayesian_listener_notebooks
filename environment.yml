@@ -23,4 +23,4 @@ dependencies:
   - pypdf
   - pip:
       # the model; pulls in pyfar, sofar, spharpy, pybads, numba, ...
-      - bayesian_listener==0.2.0
+      - bayesian_listener==0.3.0

@@ -22,7 +22,7 @@ def make():
     model = BayesianListener(str(SOFA_PATH))
     model.compute_template(interpolation="SHMAX", use_cache=False)
 
-    orig_coords = model.coords
+    orig_coords = model.target.coords
     orig_sph = np.rad2deg(orig_coords.spherical_elevation)  # (az_deg, el_deg, r)
     orig_az_deg, orig_el_deg = orig_sph[:, 0], orig_sph[:, 1]
 

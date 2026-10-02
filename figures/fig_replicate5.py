@@ -117,7 +117,7 @@ def _compute_raw(variant, sbj, params):
 
     posterior = m.infer(repetitions=REPS, seed=BASE_SEED)
     estimations = m.estimate(posterior, seed=BASE_SEED)
-    return m.coords.cartesian, estimations.cartesian.reshape(-1, 3)
+    return m.target.coords.cartesian, estimations.cartesian.reshape(-1, 3)
 
 
 def _load_computed_metrics():

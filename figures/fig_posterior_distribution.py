@@ -47,7 +47,7 @@ def make():
 
     model.compute_template(interpolation="SHMAX", cache_dir=CACHE_DIR)
 
-    dir_real = model.coords.cartesian[TARGET_IDX, :]
+    dir_real = model.target.coords.cartesian[TARGET_IDX, :]
 
     saved_target = model.target
     model.target = model.target[[TARGET_IDX]]
